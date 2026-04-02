@@ -1,0 +1,4 @@
+*.exe
+data/auto-tasks.txt
+data/state.json
+data/videos/

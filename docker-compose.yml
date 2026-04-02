@@ -1,0 +1,19 @@
+services:
+  avd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avd
+    restart: unless-stopped
+    working_dir: /app
+    command: ["-config", "/app/config/config.json"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
