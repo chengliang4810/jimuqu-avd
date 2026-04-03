@@ -68,3 +68,35 @@ func TestMergeTasksIntoFileAppendsOnlyNewIDs(t *testing.T) {
 		t.Fatalf("merged file missing new task: %q", content)
 	}
 }
+
+func TestLoadConfigUsesAVDProxyOverride(t *testing.T) {
+	t.Setenv("AVD_PROXY", "http://127.0.0.1:7890")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"proxy":"http://example.com:8080"}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got, want := cfg.Proxy, "http://127.0.0.1:7890"; got != want {
+		t.Fatalf("proxy = %q, want %q", got, want)
+	}
+}
+
+func TestProxyEnvKeepsExistingProxyVariablesWhenNoExplicitProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:7890")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+
+	env := proxyEnv("")
+	content := "\n" + strings.Join(env, "\n") + "\n"
+	if !strings.Contains(content, "\nHTTP_PROXY=http://127.0.0.1:7890\n") {
+		t.Fatalf("HTTP_PROXY missing from env: %q", content)
+	}
+	if !strings.Contains(content, "\nHTTPS_PROXY=http://127.0.0.1:7890\n") {
+		t.Fatalf("HTTPS_PROXY missing from env: %q", content)
+	}
+}

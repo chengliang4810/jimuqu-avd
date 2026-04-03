@@ -34,7 +34,7 @@ COPY --from=build /out/avd /usr/local/bin/avd
 COPY config ./config
 COPY data ./data
 
-VOLUME ["/app/config", "/app/data"]
+VOLUME ["/app/data"]
 
 ENTRYPOINT ["avd"]
 CMD ["-config", "/app/config/config.json"]

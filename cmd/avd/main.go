@@ -310,6 +310,7 @@ func loadConfig(configPath string) (Config, error) {
 	if cfg.CategoryScanIntervalSeconds == 0 {
 		cfg.CategoryScanIntervalSeconds = 600
 	}
+	cfg.Proxy = resolveProxyOverride(cfg.Proxy)
 
 	cfg.AutoTaskFile = resolveMaybeRelative(baseDir, cfg.AutoTaskFile)
 	cfg.StateFile = resolveMaybeRelative(baseDir, cfg.StateFile)
@@ -323,6 +324,16 @@ func resolveMaybeRelative(baseDir, value string) string {
 		return value
 	}
 	return filepath.Clean(filepath.Join(baseDir, value))
+}
+
+func resolveProxyOverride(configProxy string) string {
+	if value, ok := os.LookupEnv("AVD_PROXY"); ok {
+		return strings.TrimSpace(value)
+	}
+	if value, ok := os.LookupEnv("avd_proxy"); ok {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(configProxy)
 }
 
 func ensureRuntimePaths(cfg Config) error {
@@ -1504,6 +1515,10 @@ func fileExists(path string) bool {
 }
 
 func proxyEnv(proxy string) []string {
+	if strings.TrimSpace(proxy) == "" {
+		return os.Environ()
+	}
+
 	base := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		name := strings.SplitN(entry, "=", 2)[0]
@@ -1512,9 +1527,6 @@ func proxyEnv(proxy string) []string {
 			continue
 		}
 		base = append(base, entry)
-	}
-	if strings.TrimSpace(proxy) == "" {
-		return base
 	}
 	base = append(base,
 		"HTTP_PROXY="+proxy,
