@@ -2,4 +2,6 @@
 .gitignore
 videos
 data/videos
+data/auto-tasks.txt
+data/state.json
 *.exe

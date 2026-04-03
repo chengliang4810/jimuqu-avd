@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  VERSION_SERIES: 1.0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compute version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="v${VERSION_SERIES}.${GITHUB_RUN_NUMBER}"
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "VERSION_NO_V=${version#v}" >> "${GITHUB_ENV}"
+          echo "BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${GITHUB_ENV}"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          targets=(
+            "linux amd64 tar.gz"
+            "linux arm64 tar.gz"
+            "windows amd64 zip"
+          )
+
+          for target in "${targets[@]}"; do
+            read -r goos goarch archive_ext <<<"${target}"
+            pkg_root="$(mktemp -d)"
+            binary_name="avd"
+            archive_name="avd_${VERSION_NO_V}_${goos}_${goarch}.${archive_ext}"
+
+            if [[ "${goos}" == "windows" ]]; then
+              binary_name="avd.exe"
+            fi
+
+            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 go build \
+              -trimpath \
+              -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA} -X main.buildTime=${BUILD_TIME}" \
+              -o "${pkg_root}/${binary_name}" \
+              ./cmd/avd
+
+            cp README.md "${pkg_root}/README.md"
+            mkdir -p "${pkg_root}/config"
+            cp config/config.json "${pkg_root}/config/config.json"
+
+            if [[ "${archive_ext}" == "zip" ]]; then
+              (
+                cd "${pkg_root}"
+                zip -qr "${GITHUB_WORKSPACE}/dist/${archive_name}" .
+              )
+            else
+              tar -C "${pkg_root}" -czf "${GITHUB_WORKSPACE}/dist/${archive_name}" .
+            fi
+
+            rm -rf "${pkg_root}"
+          done
+
+          (
+            cd dist
+            sha256sum * > checksums.txt
+          )
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ env.VERSION }}
+            type=raw,value=latest
+            type=sha,format=short,prefix=sha-
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ env.BUILD_TIME }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          overwrite_files: true
+          files: |
+            dist/*

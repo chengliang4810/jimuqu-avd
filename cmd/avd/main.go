@@ -34,6 +34,9 @@ var (
 	hlsURLRe      = regexp.MustCompile(`var\s+hlsUrl\s*=\s*'([^']+)'`)
 	extinfRe      = regexp.MustCompile(`(?m)^#EXTINF:([0-9]+(?:\.[0-9]+)?),`)
 	releaseDateRe = regexp.MustCompile(`上市於\s*([0-9]{4}-[0-9]{2}-[0-9]{2})`)
+	version       = "dev"
+	commit        = "unknown"
+	buildTime     = "unknown"
 )
 
 type Config struct {
@@ -145,7 +148,13 @@ func main() {
 	configPath := flag.String("config", "config/config.json", "path to config json")
 	once := flag.Bool("once", false, "process current tasks once and exit")
 	taskValue := flag.String("task", "", "process a single video id or full page URL and exit")
+	showVersion := flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(versionString())
+		return
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -156,6 +165,7 @@ func main() {
 	}
 
 	logger := log.New(os.Stdout, "", log.LstdFlags)
+	logger.Printf("starting %s", versionString())
 	if err := ensureRuntimePaths(cfg); err != nil {
 		logger.Fatalf("prepare runtime paths: %v", err)
 	}
@@ -211,6 +221,10 @@ func main() {
 		case <-ticker.C:
 		}
 	}
+}
+
+func versionString() string {
+	return fmt.Sprintf("avd version=%s commit=%s buildTime=%s", version, commit, buildTime)
 }
 
 func newApp(cfg Config, logger *log.Logger) (*App, error) {

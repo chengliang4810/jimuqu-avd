@@ -2,12 +2,16 @@ FROM golang:1.25-bookworm AS build
 
 WORKDIR /src
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY cmd ./cmd
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/avd ./cmd/avd
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" -o /out/avd ./cmd/avd
 
 FROM debian:bookworm
 

@@ -46,6 +46,22 @@ docker compose logs -f avd
 
 默认不再依赖手工维护任务文件。程序会每 10 分钟扫描一次中文字幕分类第一页，把新发现且未下载、未在下载中的视频自动写入 `data/auto-tasks.txt`，随后按队列顺序下载。
 
+## 自动发布
+
+仓库已配置 GitHub Actions 工作流 `.github/workflows/release.yml`：
+
+- 每次 `push` 或合并到 GitHub `main` 分支时自动触发。
+- 自动执行 `go test ./...`。
+- 自动打包 Release 附件，并创建对应的 GitHub Release。
+- 自动推送 GHCR 镜像：`ghcr.io/chengliang4810/jimuqu-avd:<version>` 和 `ghcr.io/chengliang4810/jimuqu-avd:latest`。
+- 版本号默认按 `v1.0.<run_number>` 递增；如果要切换大版本或小版本，可修改工作流里的 `VERSION_SERIES`。
+
+程序本身也会写入构建版本，可直接查看：
+
+```bash
+avd -version
+```
+
 ## 常用命令
 
 单次执行：
