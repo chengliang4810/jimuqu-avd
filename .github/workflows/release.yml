@@ -16,7 +16,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  VERSION_SERIES: 1.0
+  VERSION_SERIES: "1.0"
 
 jobs:
   release:
