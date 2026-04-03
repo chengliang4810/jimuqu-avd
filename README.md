@@ -36,13 +36,76 @@ data/
 - `data/state.json`: 任务状态和失败次数。
 - `data/videos/`: 最终输出目录，便于直接复制到媒体库。
 
-## 部署
+## Docker 部署
+
+### 方式 1：克隆源码后用 Docker Compose 构建
+
+仓库根目录已经自带 `docker-compose.yml`，直接执行：
 
 ```bash
-docker compose build
+git clone https://github.com/chengliang4810/jimuqu-avd.git
+cd jimuqu-avd
+
+# 如果你没有本机代理，把 config/config.json 里的 "proxy" 改成 ""
+docker compose up -d --build
+docker compose logs -f avd
+```
+
+### 方式 2：不克隆仓库，直接使用 GHCR 镜像
+
+下面这组命令可以直接复制执行；默认使用 `latest` 镜像，如需固定版本，把 `latest` 改成具体版本号即可。
+
+```bash
+mkdir -p avd/config avd/data
+cd avd
+
+cat > config/config.json <<'EOF'
+{
+  "baseUrl": "https://jable.tv",
+  "pollIntervalSeconds": 60,
+  "downloadConcurrency": 5,
+  "httpTimeoutSeconds": 45,
+  "maxRetries": 3,
+  "autoTaskFile": "../data/auto-tasks.txt",
+  "stateFile": "../data/state.json",
+  "videosRoot": "../data/videos",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  "acceptLanguage": "zh-CN,zh;q=0.9,en;q=0.8",
+  "ffmpegPath": "ffmpeg",
+  "proxy": "",
+  "overwriteVideo": false,
+  "saveActorImages": true,
+  "categoryPageURL": "https://jable.tv/categories/chinese-subtitle/",
+  "categoryScanIntervalSeconds": 600
+}
+EOF
+
+cat > docker-compose.yml <<'EOF'
+services:
+  avd:
+    image: ghcr.io/chengliang4810/jimuqu-avd:latest
+    container_name: avd
+    restart: unless-stopped
+    working_dir: /app
+    command: ["-config", "/app/config/config.json"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+EOF
+
+docker compose pull
 docker compose up -d
 docker compose logs -f avd
 ```
+
+如果你需要走宿主机代理，把 `config/config.json` 里的 `proxy` 改成例如 `http://host.docker.internal:7890`。
 
 默认不再依赖手工维护任务文件。程序会每 10 分钟扫描一次中文字幕分类第一页，把新发现且未下载、未在下载中的视频自动写入 `data/auto-tasks.txt`，随后按队列顺序下载。
 
