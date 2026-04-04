@@ -133,3 +133,14 @@ func TestWriteNFOUsesPosterAndFanartTags(t *testing.T) {
 		t.Fatalf("nfo should not contain thumb tags: %q", content)
 	}
 }
+
+func TestTempVideoPathUsesSeparateTempDirWithoutMP4Suffix(t *testing.T) {
+	got := tempVideoPath(filepath.Join("data", "videos"), "abc-123")
+	want := filepath.Join("data", "tmp", "abc-123", "abc-123.download")
+	if got != want {
+		t.Fatalf("tempVideoPath() = %q, want %q", got, want)
+	}
+	if strings.HasSuffix(got, ".mp4") {
+		t.Fatalf("temp path should not use mp4 suffix: %q", got)
+	}
+}

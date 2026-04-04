@@ -40,8 +40,10 @@ var (
 )
 
 const (
-	posterFileName = "poster.jpg"
-	fanartFileName = "fanart.jpg"
+	posterFileName      = "poster.jpg"
+	fanartFileName      = "fanart.jpg"
+	downloadTempDirName = "tmp"
+	downloadTempExt     = ".download"
 )
 
 type Config struct {
@@ -1313,8 +1315,10 @@ func (a *App) downloadVideo(ctx context.Context, metadata VideoMetadata, outputP
 		return err
 	}
 
-	ext := filepath.Ext(outputPath)
-	tempPath := strings.TrimSuffix(outputPath, ext) + ".part" + ext
+	tempPath := tempVideoPath(a.config.VideosRoot, metadata.VideoID)
+	if err := os.MkdirAll(filepath.Dir(tempPath), 0o755); err != nil {
+		return err
+	}
 	os.Remove(tempPath)
 
 	headers := fmt.Sprintf("Referer: %s\r\nOrigin: %s\r\nAccept: */*\r\n", metadata.PageURL, a.config.BaseURL)
@@ -1372,6 +1376,7 @@ func (a *App) downloadVideo(ctx context.Context, metadata VideoMetadata, outputP
 	}
 	if waitErr != nil {
 		os.Remove(tempPath)
+		os.Remove(filepath.Dir(tempPath))
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
 			message = waitErr.Error()
@@ -1383,6 +1388,7 @@ func (a *App) downloadVideo(ctx context.Context, metadata VideoMetadata, outputP
 		os.Remove(tempPath)
 		return err
 	}
+	os.Remove(filepath.Dir(tempPath))
 
 	return nil
 }
@@ -1522,6 +1528,10 @@ func localAssetName(value string) string {
 		return ""
 	}
 	return filepath.ToSlash(value)
+}
+
+func tempVideoPath(videosRoot, videoID string) string {
+	return filepath.Join(filepath.Dir(videosRoot), downloadTempDirName, videoID, videoID+downloadTempExt)
 }
 
 func readState(statePath string) (State, error) {
