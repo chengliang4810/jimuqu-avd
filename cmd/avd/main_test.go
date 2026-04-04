@@ -100,3 +100,36 @@ func TestProxyEnvKeepsExistingProxyVariablesWhenNoExplicitProxy(t *testing.T) {
 		t.Fatalf("HTTPS_PROXY missing from env: %q", content)
 	}
 }
+
+func TestWriteNFOUsesPosterAndFanartTags(t *testing.T) {
+	dir := t.TempDir()
+	app := &App{}
+
+	err := app.writeNFO(VideoMetadata{
+		VideoID:         "abc-123",
+		Title:           "Example Title",
+		ReleaseDate:     "2026-04-03",
+		Genres:          []string{"中文字幕"},
+		CoverLocal:      posterFileName,
+		BackgroundLocal: fanartFileName,
+	}, dir)
+	if err != nil {
+		t.Fatalf("write nfo: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "abc-123.nfo"))
+	if err != nil {
+		t.Fatalf("read nfo: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "<poster>poster.jpg</poster>") {
+		t.Fatalf("nfo missing poster tag: %q", content)
+	}
+	if !strings.Contains(content, "<fanart>fanart.jpg</fanart>") {
+		t.Fatalf("nfo missing fanart tag: %q", content)
+	}
+	if strings.Contains(content, "<thumb") {
+		t.Fatalf("nfo should not contain thumb tags: %q", content)
+	}
+}

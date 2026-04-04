@@ -12,8 +12,8 @@ data/
     pfes-138/
       pfes-138.mp4
       pfes-138.nfo
-      pfes-138-cover.jpg
-      pfes-138-background.jpg
+      poster.jpg
+      fanart.jpg
       actors/
         actor-82a68478d0555cdea4ab75bfd5260209.jpg
 ```
@@ -146,7 +146,7 @@ docker compose run --rm avd -config /app/config/config.json -task pfes-138
 
 ## 说明
 
-- `nfo` 里只写 `genre`，不再写 `tag`；同时会输出一张封面图和一张背景图。封面图由原始大图左半边裁切得到，背景图保留原图。
+- `nfo` 里只写 `genre`，不再写 `tag`；同时会输出 `poster.jpg` 和 `fanart.jpg`。封面图由原始大图左半边裁切得到，背景图会统一转成 `fanart.jpg`。
 - 自动任务、状态文件和视频目录统一放在 `data/` 下，部署时只需要映射这一个目录。
 - 常驻服务默认只依赖自动扫描；`-task` 参数仅用于临时手动补抓或调试。
 - 常驻服务会尽量维持 `downloadConcurrency` 个并发下载槽位；有任务完成后，下一轮轮询会自动补上下一个任务。

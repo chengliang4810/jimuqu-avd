@@ -39,6 +39,11 @@ var (
 	buildTime     = "unknown"
 )
 
+const (
+	posterFileName = "poster.jpg"
+	fanartFileName = "fanart.jpg"
+)
+
 type Config struct {
 	BaseURL                     string `json:"baseUrl"`
 	PollIntervalSeconds         int    `json:"pollIntervalSeconds"`
@@ -118,7 +123,8 @@ type MovieNFO struct {
 	UniqueID      UniqueID   `xml:"uniqueid"`
 	Premiered     string     `xml:"premiered,omitempty"`
 	Genres        []string   `xml:"genre,omitempty"`
-	Thumbs        []ThumbNFO `xml:"thumb,omitempty"`
+	Poster        string     `xml:"poster,omitempty"`
+	Fanart        string     `xml:"fanart,omitempty"`
 	Actors        []ActorNFO `xml:"actor,omitempty"`
 }
 
@@ -126,11 +132,6 @@ type UniqueID struct {
 	Type    string `xml:"type,attr,omitempty"`
 	Default string `xml:"default,attr,omitempty"`
 	Value   string `xml:",chardata"`
-}
-
-type ThumbNFO struct {
-	Aspect string `xml:"aspect,attr,omitempty"`
-	Value  string `xml:",chardata"`
 }
 
 type ActorNFO struct {
@@ -1027,13 +1028,22 @@ func (a *App) estimateHLSDuration(ctx context.Context, rawURL, referer string) t
 
 func (a *App) downloadAssets(ctx context.Context, metadata *VideoMetadata, videoDir string) error {
 	if metadata.BackgroundURL != "" {
-		backgroundPath, err := a.downloadAsset(ctx, metadata.BackgroundURL, metadata.PageURL, filepath.Join(videoDir, metadata.VideoID+"-background"))
+		rawBackgroundPath, err := a.downloadAsset(ctx, metadata.BackgroundURL, metadata.PageURL, filepath.Join(videoDir, "fanart-source"))
 		if err != nil {
 			return err
 		}
-		if backgroundPath != "" {
+		if rawBackgroundPath != "" {
+			backgroundPath, err := a.convertImageToJPEG(ctx, rawBackgroundPath, filepath.Join(videoDir, fanartFileName))
+			if err != nil {
+				return err
+			}
+			if rawBackgroundPath != backgroundPath {
+				if err := os.Remove(rawBackgroundPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+			}
 			metadata.BackgroundLocal = filepath.ToSlash(filepath.Base(backgroundPath))
-			coverPath, err := a.generateCoverFromBackground(ctx, backgroundPath, filepath.Join(videoDir, metadata.VideoID+"-cover"))
+			coverPath, err := a.generateCoverFromBackground(ctx, backgroundPath, filepath.Join(videoDir, posterFileName))
 			if err != nil {
 				return err
 			}
@@ -1073,19 +1083,71 @@ func (a *App) downloadAssets(ctx context.Context, metadata *VideoMetadata, video
 	return nil
 }
 
-func (a *App) generateCoverFromBackground(ctx context.Context, backgroundPath, targetPrefix string) (string, error) {
+func (a *App) convertImageToJPEG(ctx context.Context, inputPath, targetPath string) (string, error) {
+	inputPath = strings.TrimSpace(inputPath)
+	if inputPath == "" {
+		return "", nil
+	}
+
+	finalPath := targetPath
+	ext := filepath.Ext(finalPath)
+	if ext == "" {
+		ext = ".jpg"
+		finalPath += ext
+	}
+	tempPath := strings.TrimSuffix(finalPath, ext) + ".part" + ext
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		return "", err
+	}
+
+	os.Remove(tempPath)
+
+	cmd := exec.CommandContext(
+		ctx,
+		a.config.FFmpegPath,
+		"-hide_banner",
+		"-loglevel", "error",
+		"-y",
+		"-i", inputPath,
+		"-frames:v", "1",
+		"-q:v", "2",
+		tempPath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		os.Remove(tempPath)
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			message = err.Error()
+		}
+		return "", fmt.Errorf("convert image %s to jpeg failed: %s", inputPath, message)
+	}
+
+	if err := os.Remove(finalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		os.Remove(tempPath)
+		return "", err
+	}
+	if err := os.Rename(tempPath, finalPath); err != nil {
+		os.Remove(tempPath)
+		return "", err
+	}
+
+	return finalPath, nil
+}
+
+func (a *App) generateCoverFromBackground(ctx context.Context, backgroundPath, targetPath string) (string, error) {
 	backgroundPath = strings.TrimSpace(backgroundPath)
 	if backgroundPath == "" {
 		return "", nil
 	}
 
-	ext := strings.ToLower(filepath.Ext(backgroundPath))
+	finalPath := targetPath
+	ext := filepath.Ext(finalPath)
 	if ext == "" {
 		ext = ".jpg"
+		finalPath += ext
 	}
-
-	finalPath := targetPrefix + ext
-	tempPath := targetPrefix + ".part" + ext
+	tempPath := strings.TrimSuffix(finalPath, ext) + ".part" + ext
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
 		return "", err
 	}
@@ -1101,6 +1163,7 @@ func (a *App) generateCoverFromBackground(ctx context.Context, backgroundPath, t
 		"-i", backgroundPath,
 		"-vf", "crop=iw/2:ih:0:0",
 		"-frames:v", "1",
+		"-q:v", "2",
 		tempPath,
 	)
 	output, err := cmd.CombinedOutput()
@@ -1426,16 +1489,10 @@ func (a *App) writeNFO(metadata VideoMetadata, videoDir string) error {
 	}
 
 	if coverFile := localAssetName(metadata.CoverLocal); coverFile != "" {
-		movie.Thumbs = append(movie.Thumbs, ThumbNFO{
-			Aspect: "poster",
-			Value:  coverFile,
-		})
+		movie.Poster = coverFile
 	}
-	if backgroundFile := localAssetName(metadata.BackgroundLocal); backgroundFile != "" && backgroundFile != localAssetName(metadata.CoverLocal) {
-		movie.Thumbs = append(movie.Thumbs, ThumbNFO{
-			Aspect: "fanart",
-			Value:  backgroundFile,
-		})
+	if backgroundFile := localAssetName(metadata.BackgroundLocal); backgroundFile != "" {
+		movie.Fanart = backgroundFile
 	}
 
 	for _, model := range metadata.Models {
