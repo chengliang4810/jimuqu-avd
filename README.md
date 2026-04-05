@@ -135,6 +135,7 @@ docker compose run --rm avd -config /app/config/config.json -task pfes-138
 - `autoTaskFile`: 自动扫描任务文件路径。
 - `stateFile`: 状态文件路径。
 - `videosRoot`: 视频输出根目录，默认固定为 `../data/videos`。
+- `maxRetainedVideos`: 最多保留多少个已完成视频目录；`0` 表示不限制。比如设为 `80` 时，超过 80 部后会自动删除最旧的视频目录。
 - `userAgent`: 抓取请求使用的 UA。
 - `acceptLanguage`: 抓取请求语言头。
 - `ffmpegPath`: `ffmpeg` 可执行文件名或路径。
@@ -148,7 +149,9 @@ docker compose run --rm avd -config /app/config/config.json -task pfes-138
 
 - `nfo` 里只写 `genre`，不再写 `tag`；同时会输出 `poster.jpg` 和 `fanart.jpg`。封面图由原始大图左半边裁切得到，背景图会统一转成 `fanart.jpg`。
 - 自动任务、状态文件和视频目录统一放在 `data/` 下，部署时只需要映射这一个目录。
+- 下载中的视频会先写到 `data/tmp/<videoID>/<videoID>.mp4`，完成后再移动到 `data/videos/`。
 - 常驻服务默认只依赖自动扫描；`-task` 参数仅用于临时手动补抓或调试。
 - 常驻服务会尽量维持 `downloadConcurrency` 个并发下载槽位；有任务完成后，下一轮轮询会自动补上下一个任务。
+- 如果设置了 `maxRetainedVideos`，程序会按完成时间从旧到新清理超出的成品视频，并同步从自动任务列表里移除，避免被下一轮自动重下。
 - 容器镜像运行在 Debian bookworm，适合部署到 Debian NAS。
 - 当前环境里没有本地 `ffmpeg` 可用于完整下载测试，因此仓库内完成了编译校验，但完整视频下载建议在 Docker 容器内验证。

@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,7 +44,7 @@ const (
 	posterFileName      = "poster.jpg"
 	fanartFileName      = "fanart.jpg"
 	downloadTempDirName = "tmp"
-	downloadTempExt     = ".download"
+	downloadTempExt     = ".mp4"
 )
 
 type Config struct {
@@ -55,6 +56,7 @@ type Config struct {
 	AutoTaskFile                string `json:"autoTaskFile"`
 	StateFile                   string `json:"stateFile"`
 	VideosRoot                  string `json:"videosRoot"`
+	MaxRetainedVideos           int    `json:"maxRetainedVideos"`
 	UserAgent                   string `json:"userAgent"`
 	AcceptLanguage              string `json:"acceptLanguage"`
 	FFmpegPath                  string `json:"ffmpegPath"`
@@ -90,6 +92,13 @@ type TaskState struct {
 	LastError  string `json:"lastError,omitempty"`
 	OutputPath string `json:"outputPath,omitempty"`
 	Title      string `json:"title,omitempty"`
+}
+
+type retainedVideo struct {
+	VideoID   string
+	DirPath   string
+	VideoPath string
+	Modified  time.Time
 }
 
 type VideoMetadata struct {
@@ -177,13 +186,16 @@ func main() {
 	if err != nil {
 		logger.Fatalf("create app: %v", err)
 	}
+	if err := app.pruneRetainedVideos(); err != nil {
+		logger.Fatalf("apply retention policy: %v", err)
+	}
 
 	if *taskValue != "" {
 		task, err := normalizeTask(*taskValue, cfg.BaseURL)
 		if err != nil {
 			logger.Fatalf("invalid task: %v", err)
 		}
-		if err := app.processTasks(ctx, []Task{task}); err != nil {
+		if err := app.processManualTask(ctx, task); err != nil {
 			logger.Fatalf("process task: %v", err)
 		}
 		return
@@ -312,6 +324,9 @@ func loadConfig(configPath string) (Config, error) {
 	}
 	if cfg.CategoryScanIntervalSeconds == 0 {
 		cfg.CategoryScanIntervalSeconds = 600
+	}
+	if cfg.MaxRetainedVideos < 0 {
+		cfg.MaxRetainedVideos = 0
 	}
 	cfg.Proxy = resolveProxyOverride(cfg.Proxy)
 
@@ -487,6 +502,8 @@ func (a *App) scanCategoryPage(ctx context.Context) error {
 				if a.outputReady(task.VideoID) {
 					continue
 				}
+			case "pruned":
+				continue
 			case "running":
 				continue
 			}
@@ -607,6 +624,57 @@ func mergeTasksIntoFile(taskFile string, tasks []Task) (int, error) {
 	return added, nil
 }
 
+func removeTasksFromFile(taskFile string, videoIDs []string) (int, error) {
+	if len(videoIDs) == 0 {
+		return 0, nil
+	}
+
+	data, err := os.ReadFile(taskFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	removeSet := make(map[string]bool, len(videoIDs))
+	for _, videoID := range videoIDs {
+		removeSet[strings.ToLower(strings.TrimSpace(videoID))] = true
+	}
+
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines))
+	removed := 0
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line != "" && !strings.HasPrefix(line, "#") && removeSet[strings.ToLower(line)] {
+			removed++
+			continue
+		}
+		filtered = append(filtered, rawLine)
+	}
+
+	for len(filtered) > 0 && filtered[len(filtered)-1] == "" {
+		filtered = filtered[:len(filtered)-1]
+	}
+
+	payload := strings.Join(filtered, "\n")
+	if payload != "" && !strings.HasSuffix(payload, "\n") {
+		payload += "\n"
+	}
+
+	tempPath := taskFile + ".tmp"
+	if err := os.WriteFile(tempPath, []byte(payload), 0o644); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tempPath, taskFile); err != nil {
+		return 0, err
+	}
+
+	return removed, nil
+}
+
 func (a *App) loadAutoTasks() ([]Task, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -660,6 +728,9 @@ func (a *App) tryClaimTask(task Task) (bool, error) {
 	}
 
 	taskState := state.Tasks[taskKey]
+	if taskState != nil && taskState.Status == "pruned" {
+		return false, nil
+	}
 	if taskState != nil && taskState.Status == "completed" && a.outputReady(task.VideoID) {
 		return false, nil
 	}
@@ -669,6 +740,18 @@ func (a *App) tryClaimTask(task Task) (bool, error) {
 
 	a.activeTasks[taskKey] = true
 	return true, nil
+}
+
+func (a *App) forceClaimTask(videoID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	taskKey := strings.ToLower(videoID)
+	if a.activeTasks[taskKey] {
+		return fmt.Errorf("task already running: %s", videoID)
+	}
+	a.activeTasks[taskKey] = true
+	return nil
 }
 
 func (a *App) releaseTask(videoID string) {
@@ -704,6 +787,13 @@ func (a *App) failTask(videoID string, taskErr error) error {
 		return err
 	}
 	return taskErr
+}
+
+func (a *App) processManualTask(ctx context.Context, task Task) error {
+	if err := a.forceClaimTask(task.VideoID); err != nil {
+		return err
+	}
+	return a.processTask(ctx, task)
 }
 
 func (a *App) processTasks(ctx context.Context, tasks []Task) error {
@@ -835,6 +925,9 @@ func (a *App) processTask(ctx context.Context, task Task) error {
 		taskState.LastError = ""
 		taskState.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}); err != nil {
+		return err
+	}
+	if err := a.pruneRetainedVideos(); err != nil {
 		return err
 	}
 	a.logger.Printf("[%s] completed -> %s", task.VideoID, videoPath)
@@ -1532,6 +1625,105 @@ func localAssetName(value string) string {
 
 func tempVideoPath(videosRoot, videoID string) string {
 	return filepath.Join(filepath.Dir(videosRoot), downloadTempDirName, videoID, videoID+downloadTempExt)
+}
+
+func listRetainedVideos(videosRoot string) ([]retainedVideo, error) {
+	entries, err := os.ReadDir(videosRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	videos := make([]retainedVideo, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		videoID := entry.Name()
+		dirPath := filepath.Join(videosRoot, videoID)
+		videoPath := filepath.Join(dirPath, videoID+".mp4")
+		info, err := os.Stat(videoPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		videos = append(videos, retainedVideo{
+			VideoID:   videoID,
+			DirPath:   dirPath,
+			VideoPath: videoPath,
+			Modified:  info.ModTime(),
+		})
+	}
+
+	sort.Slice(videos, func(i, j int) bool {
+		if videos[i].Modified.Equal(videos[j].Modified) {
+			return strings.ToLower(videos[i].VideoID) < strings.ToLower(videos[j].VideoID)
+		}
+		return videos[i].Modified.Before(videos[j].Modified)
+	})
+
+	return videos, nil
+}
+
+func (a *App) pruneRetainedVideos() error {
+	if a.config.MaxRetainedVideos <= 0 {
+		return nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	videos, err := listRetainedVideos(a.config.VideosRoot)
+	if err != nil {
+		return err
+	}
+	if len(videos) <= a.config.MaxRetainedVideos {
+		return nil
+	}
+
+	pruneTargets := videos[:len(videos)-a.config.MaxRetainedVideos]
+	prunedIDs := make([]string, 0, len(pruneTargets))
+	for _, video := range pruneTargets {
+		if err := os.RemoveAll(video.DirPath); err != nil {
+			return err
+		}
+		prunedIDs = append(prunedIDs, video.VideoID)
+	}
+
+	if _, err := removeTasksFromFile(a.config.AutoTaskFile, prunedIDs); err != nil {
+		return err
+	}
+
+	state, err := readState(a.config.StateFile)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, videoID := range prunedIDs {
+		taskKey := strings.ToLower(videoID)
+		taskState := state.Tasks[taskKey]
+		if taskState == nil {
+			taskState = &TaskState{}
+			state.Tasks[taskKey] = taskState
+		}
+		taskState.Status = "pruned"
+		taskState.OutputPath = ""
+		taskState.LastError = ""
+		taskState.UpdatedAt = now
+	}
+	if err := writeState(a.config.StateFile, state); err != nil {
+		return err
+	}
+
+	a.logger.Printf("retention pruned %d videos: %s", len(prunedIDs), strings.Join(prunedIDs, ", "))
+	return nil
 }
 
 func readState(statePath string) (State, error) {

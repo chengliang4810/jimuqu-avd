@@ -1,10 +1,13 @@
 package main
 
 import (
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -134,13 +137,139 @@ func TestWriteNFOUsesPosterAndFanartTags(t *testing.T) {
 	}
 }
 
-func TestTempVideoPathUsesSeparateTempDirWithoutMP4Suffix(t *testing.T) {
+func TestTempVideoPathUsesSeparateTempDir(t *testing.T) {
 	got := tempVideoPath(filepath.Join("data", "videos"), "abc-123")
-	want := filepath.Join("data", "tmp", "abc-123", "abc-123.download")
+	want := filepath.Join("data", "tmp", "abc-123", "abc-123.mp4")
 	if got != want {
 		t.Fatalf("tempVideoPath() = %q, want %q", got, want)
 	}
-	if strings.HasSuffix(got, ".mp4") {
-		t.Fatalf("temp path should not use mp4 suffix: %q", got)
+	if !strings.Contains(got, filepath.Join("data", "tmp", "abc-123")) {
+		t.Fatalf("temp path should be stored outside videos directory: %q", got)
+	}
+}
+
+func TestTryClaimTaskSkipsPrunedTasks(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	if err := writeState(statePath, State{
+		Tasks: map[string]*TaskState{
+			"abc-123": {Status: "pruned"},
+		},
+	}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	app := &App{
+		config:      Config{StateFile: statePath},
+		logger:      log.New(io.Discard, "", 0),
+		activeTasks: map[string]bool{},
+	}
+
+	claimed, err := app.tryClaimTask(Task{VideoID: "abc-123"})
+	if err != nil {
+		t.Fatalf("tryClaimTask: %v", err)
+	}
+	if claimed {
+		t.Fatalf("pruned task should not be claimed")
+	}
+}
+
+func TestPruneRetainedVideosRemovesOldestAndUpdatesTaskSources(t *testing.T) {
+	dir := t.TempDir()
+	videosRoot := filepath.Join(dir, "videos")
+	autoTaskFile := filepath.Join(dir, "auto-tasks.txt")
+	stateFile := filepath.Join(dir, "state.json")
+
+	if err := os.MkdirAll(videosRoot, 0o755); err != nil {
+		t.Fatalf("mkdir videos root: %v", err)
+	}
+	if err := os.WriteFile(autoTaskFile, []byte("# auto discovered video ids\nold-001\nnew-001\n"), 0o644); err != nil {
+		t.Fatalf("write auto task file: %v", err)
+	}
+
+	oldDir := filepath.Join(videosRoot, "old-001")
+	newDir := filepath.Join(videosRoot, "new-001")
+	for _, dirPath := range []string{oldDir, newDir} {
+		if err := os.MkdirAll(dirPath, 0o755); err != nil {
+			t.Fatalf("mkdir video dir: %v", err)
+		}
+	}
+
+	oldVideoPath := filepath.Join(oldDir, "old-001.mp4")
+	newVideoPath := filepath.Join(newDir, "new-001.mp4")
+	for _, path := range []string{
+		oldVideoPath,
+		filepath.Join(oldDir, "old-001.nfo"),
+		newVideoPath,
+		filepath.Join(newDir, "new-001.nfo"),
+	} {
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write file %s: %v", path, err)
+		}
+	}
+
+	now := time.Now()
+	if err := os.Chtimes(oldVideoPath, now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
+		t.Fatalf("chtimes old video: %v", err)
+	}
+	if err := os.Chtimes(newVideoPath, now.Add(-1*time.Hour), now.Add(-1*time.Hour)); err != nil {
+		t.Fatalf("chtimes new video: %v", err)
+	}
+
+	if err := writeState(stateFile, State{
+		Tasks: map[string]*TaskState{
+			"old-001": {Status: "completed", OutputPath: oldVideoPath},
+			"new-001": {Status: "completed", OutputPath: newVideoPath},
+		},
+	}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	app := &App{
+		config: Config{
+			AutoTaskFile:      autoTaskFile,
+			StateFile:         stateFile,
+			VideosRoot:        videosRoot,
+			MaxRetainedVideos: 1,
+		},
+		logger:      log.New(io.Discard, "", 0),
+		activeTasks: map[string]bool{},
+	}
+
+	if err := app.pruneRetainedVideos(); err != nil {
+		t.Fatalf("pruneRetainedVideos: %v", err)
+	}
+
+	if fileExists(oldDir) {
+		t.Fatalf("oldest video dir should be removed")
+	}
+	if !fileExists(newVideoPath) {
+		t.Fatalf("newer video should be kept")
+	}
+
+	taskData, err := os.ReadFile(autoTaskFile)
+	if err != nil {
+		t.Fatalf("read auto task file: %v", err)
+	}
+	taskContent := string(taskData)
+	if strings.Contains(taskContent, "old-001\n") {
+		t.Fatalf("old pruned task should be removed from task file: %q", taskContent)
+	}
+	if !strings.Contains(taskContent, "new-001\n") {
+		t.Fatalf("new retained task should stay in task file: %q", taskContent)
+	}
+
+	state, err := readState(stateFile)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if got := state.Tasks["old-001"].Status; got != "pruned" {
+		t.Fatalf("old task status = %q, want %q", got, "pruned")
+	}
+	if got := state.Tasks["old-001"].OutputPath; got != "" {
+		t.Fatalf("old task output path = %q, want empty", got)
+	}
+	if got := state.Tasks["new-001"].Status; got != "completed" {
+		t.Fatalf("new task status = %q, want %q", got, "completed")
 	}
 }
