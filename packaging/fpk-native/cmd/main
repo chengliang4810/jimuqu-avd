@@ -1,0 +1,117 @@
+#!/bin/bash
+
+set -u
+
+APP_NAME="${TRIM_APPNAME:-jimuqu-avd-native}"
+SHARE_ROOT="/var/apps/${APP_NAME}/shares/${APP_NAME}"
+CONFIG_DIR="${SHARE_ROOT}/config"
+DATA_DIR="${SHARE_ROOT}/data"
+CONFIG_FILE="${CONFIG_DIR}/config.json"
+LOG_FILE="${TRIM_PKGVAR}/avd.log"
+PID_FILE="${TRIM_PKGVAR}/avd.pid"
+AVD_BIN="${TRIM_APPDEST}/bin/avd"
+
+log_msg() {
+    mkdir -p "${TRIM_PKGVAR}"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >> "$TRIM_TEMP_LOGFILE"
+    fi
+}
+
+prepare_runtime_dirs() {
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR" "${TRIM_PKGVAR}"
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+        cp "${TRIM_APPDEST}/config/config.json" "$CONFIG_FILE"
+        log_msg "created default config: $CONFIG_FILE"
+    fi
+}
+
+read_pid() {
+    if [ -r "$PID_FILE" ]; then
+        head -n 1 "$PID_FILE" | tr -d '[:space:]'
+    fi
+}
+
+check_process() {
+    pid="$1"
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    kill -0 "$pid" >/dev/null 2>&1
+}
+
+status_process() {
+    pid="$(read_pid)"
+    check_process "$pid"
+}
+
+start_process() {
+    prepare_runtime_dirs
+
+    if ! command -v /usr/bin/ffmpeg >/dev/null 2>&1; then
+        log_msg "ffmpeg not found at /usr/bin/ffmpeg"
+        return 1
+    fi
+
+    if status_process; then
+        log_msg "process already running, pid=$(read_pid)"
+        return 0
+    fi
+
+    chmod +x "$AVD_BIN"
+    cd "$TRIM_APPDEST" || return 1
+
+    log_msg "starting avd"
+    AVD_PROXY="${AVD_PROXY:-}" "$AVD_BIN" -config "$CONFIG_FILE" >> "$LOG_FILE" 2>&1 &
+    printf "%s" "$!" > "$PID_FILE"
+    log_msg "started avd, pid=$!"
+    return 0
+}
+
+stop_process() {
+    pid="$(read_pid)"
+
+    if ! check_process "$pid"; then
+        rm -f "$PID_FILE"
+        log_msg "process not running"
+        return 0
+    fi
+
+    log_msg "stopping avd, pid=$pid"
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+
+    for _ in $(seq 1 30); do
+        if ! check_process "$pid"; then
+            rm -f "$PID_FILE"
+            log_msg "stopped avd"
+            return 0
+        fi
+        sleep 1
+    done
+
+    log_msg "force killing avd, pid=$pid"
+    kill -KILL "$pid" >/dev/null 2>&1 || true
+    rm -f "$PID_FILE"
+    return 0
+}
+
+case "${1:-}" in
+start)
+    start_process
+    ;;
+stop)
+    stop_process
+    ;;
+status)
+    if status_process; then
+        exit 0
+    else
+        exit 3
+    fi
+    ;;
+*)
+    exit 1
+    ;;
+esac

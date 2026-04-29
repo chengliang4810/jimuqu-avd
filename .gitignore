@@ -1,5 +1,11 @@
 *.exe
 dist/
+.tools/
+jimuqu-avd.fpk
+jimuqu-avd-native.fpk
+packaging/fpk/*.fpk
+packaging/fpk-native/*.fpk
+packaging/fpk-native/app/bin/avd
 data/auto-tasks.txt
 data/state.json
 data/videos/

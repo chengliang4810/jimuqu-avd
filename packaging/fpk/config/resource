@@ -1,0 +1,38 @@
+{
+    "docker-project": {
+        "projects": [
+            {
+                "name": "jimuqu-avd",
+                "path": "docker"
+            }
+        ]
+    },
+    "data-share": {
+        "shares": [
+            {
+                "name": "jimuqu-avd",
+                "permission": {
+                    "rw": [
+                        "docker-jimuqu-avd"
+                    ]
+                }
+            },
+            {
+                "name": "jimuqu-avd/config",
+                "permission": {
+                    "rw": [
+                        "docker-jimuqu-avd"
+                    ]
+                }
+            },
+            {
+                "name": "jimuqu-avd/data",
+                "permission": {
+                    "rw": [
+                        "docker-jimuqu-avd"
+                    ]
+                }
+            }
+        ]
+    }
+}

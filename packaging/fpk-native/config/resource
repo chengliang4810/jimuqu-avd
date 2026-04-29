@@ -1,0 +1,30 @@
+{
+    "data-share": {
+        "shares": [
+            {
+                "name": "jimuqu-avd-native",
+                "permission": {
+                    "rw": [
+                        "jimuqu-avd"
+                    ]
+                }
+            },
+            {
+                "name": "jimuqu-avd-native/config",
+                "permission": {
+                    "rw": [
+                        "jimuqu-avd"
+                    ]
+                }
+            },
+            {
+                "name": "jimuqu-avd-native/data",
+                "permission": {
+                    "rw": [
+                        "jimuqu-avd"
+                    ]
+                }
+            }
+        ]
+    }
+}

@@ -1,0 +1,11 @@
+appname      = jimuqu-avd-native
+version      = 1.0.0
+display_name = AVD Native
+desc         = AVD Native 是一个适合飞牛 fnOS 后台运行的视频元数据与媒体下载服务，使用系统自带 ffmpeg 处理媒体下载。
+platform     = x86
+source       = thirdparty
+maintainer   = chengliang4810
+distributor  = chengliang4810
+ctl_stop     = true
+checkport    = false
+disable_authorization_path = true

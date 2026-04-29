@@ -1,0 +1,87 @@
+#!/bin/bash
+set -u
+
+APP_NAME="${TRIM_APPNAME:-jimuqu-avd}"
+SHARE_ROOT="/var/apps/${APP_NAME}/shares/${APP_NAME}"
+CONFIG_DIR="${SHARE_ROOT}/config"
+DATA_DIR="${SHARE_ROOT}/data"
+CONFIG_FILE="${CONFIG_DIR}/config.json"
+
+fail() {
+    msg="$1"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$msg" >> "$TRIM_TEMP_LOGFILE"
+    fi
+    echo "$msg" >&2
+    exit 1
+}
+
+log_msg() {
+    msg="$1"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$msg" >> "$TRIM_TEMP_LOGFILE"
+    fi
+}
+
+sanitize_text() {
+    printf "%s" "$1" | tr -d "\r\n"
+}
+
+json_escape() {
+    printf "%s" "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+validate_uint() {
+    name="$1"
+    value="$2"
+    case "$value" in
+    ""|*[!0-9]*)
+        fail "${name} 必须是大于或等于 0 的整数"
+        ;;
+    esac
+}
+
+validate_positive_uint() {
+    name="$1"
+    value="$2"
+    validate_uint "$name" "$value"
+    if [ "$value" -le 0 ]; then
+        fail "${name} 必须大于 0"
+    fi
+}
+
+mkdir -p "$CONFIG_DIR" "$DATA_DIR"
+if [ ! -f "$CONFIG_FILE" ]; then
+    cp "${TRIM_APPDEST}/config/config.json" "$CONFIG_FILE"
+fi
+
+PROXY="$(sanitize_text "${wizard_proxy:-}")"
+MAX_RETAINED="$(sanitize_text "${wizard_max_retained_videos:-0}")"
+DOWNLOAD_CONCURRENCY="$(sanitize_text "${wizard_download_concurrency:-5}")"
+
+validate_uint "最多保留视频数" "$MAX_RETAINED"
+validate_positive_uint "同时下载数量" "$DOWNLOAD_CONCURRENCY"
+
+TMP_FILE="${CONFIG_FILE}.tmp.$$"
+awk \
+    -v proxy="$(json_escape "$PROXY")" \
+    -v maxRetained="$MAX_RETAINED" \
+    -v downloadConcurrency="$DOWNLOAD_CONCURRENCY" \
+    '
+    /"downloadConcurrency"[[:space:]]*:/ { print "  \"downloadConcurrency\": " downloadConcurrency ","; next }
+    /"maxRetainedVideos"[[:space:]]*:/ { print "  \"maxRetainedVideos\": " maxRetained ","; next }
+    /"proxy"[[:space:]]*:/ { print "  \"proxy\": \"" proxy "\","; next }
+    { print }
+    ' "$CONFIG_FILE" > "$TMP_FILE" || fail "写入配置失败"
+
+mv "$TMP_FILE" "$CONFIG_FILE" || fail "保存配置失败"
+log_msg "配置已保存到 ${CONFIG_FILE}"
+
+if command -v docker >/dev/null 2>&1 && docker inspect jimuqu-avd >/dev/null 2>&1; then
+    if docker inspect jimuqu-avd 2>/dev/null | grep -q "\"Status\": \"running\","; then
+        docker restart jimuqu-avd >/dev/null 2>&1 || fail "配置已保存，但重启 Docker 容器失败"
+        log_msg "Docker 容器已重启，设置已生效"
+    fi
+fi
+
+exit 0

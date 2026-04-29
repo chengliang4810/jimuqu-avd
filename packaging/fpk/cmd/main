@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -u
+
+APP_NAME="${TRIM_APPNAME:-jimuqu-avd}"
+FILE_PATH="${TRIM_APPDEST}/docker/docker-compose.yaml"
+SHARE_ROOT="/var/apps/${APP_NAME}/shares/${APP_NAME}"
+CONFIG_DIR="${SHARE_ROOT}/config"
+DATA_DIR="${SHARE_ROOT}/data"
+
+log_msg() {
+    echo "$1"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >> "$TRIM_TEMP_LOGFILE"
+    fi
+}
+
+prepare_runtime_dirs() {
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR"
+
+    if [ ! -f "$CONFIG_DIR/config.json" ]; then
+        cp "${TRIM_APPDEST}/config/config.json" "$CONFIG_DIR/config.json"
+        log_msg "created default config: $CONFIG_DIR/config.json"
+    fi
+}
+
+is_docker_running() {
+    DOCKER_NAME="jimuqu-avd"
+
+    if [ -f "$FILE_PATH" ]; then
+        FOUND_NAME=$(grep -m 1 "container_name" "$FILE_PATH" | awk -F ':' '{print $2}' | xargs)
+        if [ -n "$FOUND_NAME" ]; then
+            DOCKER_NAME="$FOUND_NAME"
+        fi
+    fi
+
+    docker inspect "$DOCKER_NAME" 2>/dev/null | grep -q "\"Status\": \"running\","
+}
+
+case "${1:-}" in
+start)
+    prepare_runtime_dirs
+    exit 0
+    ;;
+stop)
+    exit 0
+    ;;
+status)
+    if is_docker_running; then
+        exit 0
+    else
+        exit 3
+    fi
+    ;;
+*)
+    exit 1
+    ;;
+esac

@@ -1,0 +1,49 @@
+[
+    {
+        "stepTitle": "应用设置",
+        "items": [
+            {
+                "type": "text",
+                "field": "wizard_proxy",
+                "label": "代理地址",
+                "initValue": ""
+            },
+            {
+                "type": "text",
+                "field": "wizard_max_retained_videos",
+                "label": "最多保留视频数",
+                "initValue": "0",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请输入最多保留视频数"
+                    },
+                    {
+                        "pattern": "^[0-9]+$",
+                        "message": "请输入大于或等于 0 的整数"
+                    }
+                ]
+            },
+            {
+                "type": "text",
+                "field": "wizard_download_concurrency",
+                "label": "同时下载数量",
+                "initValue": "5",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请输入同时下载数量"
+                    },
+                    {
+                        "pattern": "^[1-9][0-9]*$",
+                        "message": "请输入大于 0 的整数"
+                    }
+                ]
+            },
+            {
+                "type": "tips",
+                "helpText": "代理地址留空表示不使用代理；最多保留视频数填 0 表示不自动清理。其他参数使用内置默认配置。"
+            }
+        ]
+    }
+]

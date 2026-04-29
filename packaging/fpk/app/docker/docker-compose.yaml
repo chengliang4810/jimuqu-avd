@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  avd:
+    image: ghcr.io/chengliang4810/jimuqu-avd:${AVD_IMAGE_TAG:-latest}
+    container_name: jimuqu-avd
+    restart: unless-stopped
+    environment:
+      AVD_PROXY: ${AVD_PROXY:-}
+    volumes:
+      - /var/apps/jimuqu-avd/shares/jimuqu-avd/config:/app/config
+      - /var/apps/jimuqu-avd/shares/jimuqu-avd/data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

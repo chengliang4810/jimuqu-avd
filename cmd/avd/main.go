@@ -346,10 +346,14 @@ func resolveMaybeRelative(baseDir, value string) string {
 
 func resolveProxyOverride(configProxy string) string {
 	if value, ok := os.LookupEnv("AVD_PROXY"); ok {
-		return strings.TrimSpace(value)
+		if proxy := strings.TrimSpace(value); proxy != "" {
+			return proxy
+		}
 	}
 	if value, ok := os.LookupEnv("avd_proxy"); ok {
-		return strings.TrimSpace(value)
+		if proxy := strings.TrimSpace(value); proxy != "" {
+			return proxy
+		}
 	}
 	return strings.TrimSpace(configProxy)
 }

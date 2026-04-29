@@ -155,3 +155,48 @@ docker compose run --rm avd -config /app/config/config.json -task pfes-138
 - 如果设置了 `maxRetainedVideos`，程序会按完成时间从旧到新清理超出的成品视频，并同步从自动任务列表里移除，避免被下一轮自动重下。
 - 容器镜像运行在 Debian bookworm，适合部署到 Debian NAS。
 - 当前环境里没有本地 `ffmpeg` 可用于完整下载测试，因此仓库内完成了编译校验，但完整视频下载建议在 Docker 容器内验证。
+
+## 飞牛 fnOS FPK 打包
+
+仓库已内置飞牛 FPK 打包目录 `packaging/fpk`，形态是无前端 Docker 应用。FPK 安装后由飞牛应用中心通过 Docker Compose 拉取并运行 `ghcr.io/chengliang4810/jimuqu-avd:latest` 镜像。
+
+Windows 本地打包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-fpk.ps1
+```
+
+如果已经安装 `fnpack`，也可以直接执行：
+
+```bash
+fnpack build --directory packaging/fpk
+```
+
+通过脚本打包时，产物会生成在 `dist/fpk/jimuqu-avd.fpk`，可在飞牛应用中心手动安装。直接执行 `fnpack build --directory packaging/fpk` 时，`fnpack` 会把产物放到当前工作目录。安装后配置文件和运行数据位于“文件管理 - 应用文件 - jimuqu-avd”：
+
+- `config/config.json`: 应用配置，可在这里配置代理、并发数、保留数量等。
+- `data/`: 自动任务、状态文件和下载产物目录。
+
+安装后也可以直接在飞牛“应用设置”里修改常用项，包括代理地址、最多保留视频数和同时下载数量。最多保留视频数填 `0` 表示不自动清理；其他参数使用包内默认配置。
+
+FPK 不在安装时构建镜像，因此发布新版程序时需要先通过 GitHub Actions 推送新版 GHCR 镜像，再重新打包或安装 FPK。
+
+### Native FPK
+
+如果飞牛设备本机已经提供可用的 `ffmpeg`，也可以打原生包。原生包会把 Linux amd64 的 `avd` 二进制放进 FPK，不依赖 Docker 和 GHCR 镜像。
+
+飞牛设备上建议先确认：
+
+```bash
+which ffmpeg
+ffmpeg -hide_banner -protocols | grep -E 'https|tls|crypto|httpproxy'
+```
+
+Windows 本地打包 Native FPK：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-fpk-native.ps1
+```
+
+产物会生成在 `dist/fpk/jimuqu-avd-native.fpk`。安装后配置文件和运行数据位于“文件管理 - 应用文件 - jimuqu-avd-native”。
+Native FPK 同样提供飞牛“应用设置”，保存后会写回 `config/config.json`；如果应用正在运行，设置保存后会自动重启后台进程使配置生效。

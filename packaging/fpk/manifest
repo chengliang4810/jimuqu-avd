@@ -1,0 +1,11 @@
+appname      = jimuqu-avd
+version      = 1.0.0
+display_name = AVD
+desc         = AVD 是一个适合 NAS 后台运行的视频元数据与媒体下载服务，支持自动扫描任务、生成 NFO 与保存媒体文件。
+platform     = x86
+source       = thirdparty
+maintainer   = chengliang4810
+distributor  = chengliang4810
+ctl_stop     = true
+checkport    = false
+disable_authorization_path = true
