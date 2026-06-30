@@ -68,6 +68,7 @@ services:
     restart: unless-stopped
     environment:
       AVD_PROXY: http://192.168.1.10:7890
+      MAX_RETAINED_VIDEOS: 100
     volumes:
       - ./data:/app/data
     logging:
@@ -89,6 +90,12 @@ docker compose logs -f avd
 
 ```bash
 AVD_PROXY=http://192.168.1.10:7890 docker compose up -d
+```
+
+如果你要限制最多保留 100 个已完成视频目录，可在 `environment` 里设置：
+
+```yaml
+MAX_RETAINED_VIDEOS: 100
 ```
 
 如果你需要自定义其他配置，再额外挂载 `./config:/app/config`。
@@ -135,7 +142,7 @@ docker compose run --rm avd -config /app/config/config.json -task pfes-138
 - `autoTaskFile`: 自动扫描任务文件路径。
 - `stateFile`: 状态文件路径。
 - `videosRoot`: 视频输出根目录，默认固定为 `../data/videos`。
-- `maxRetainedVideos`: 最多保留多少个已完成视频目录；`0` 表示不限制。比如设为 `80` 时，超过 80 部后会自动删除最旧的视频目录。
+- `maxRetainedVideos`: 最多保留多少个已完成视频目录；`0` 表示不限制。Docker 部署可通过环境变量 `MAX_RETAINED_VIDEOS` 覆盖，容器每次启动都会读取当前环境变量值。比如设为 `80` 时，超过 80 部后会自动删除最旧的视频目录。
 - `userAgent`: 抓取请求使用的 UA。
 - `acceptLanguage`: 抓取请求语言头。
 - `ffmpegPath`: `ffmpeg` 可执行文件名或路径。

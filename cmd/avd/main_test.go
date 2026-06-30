@@ -108,6 +108,42 @@ func TestLoadConfigKeepsConfigProxyWhenAVDProxyIsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadConfigUsesMaxRetainedVideosOverride(t *testing.T) {
+	t.Setenv("maxRetainedVideos", "100")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"maxRetainedVideos":5}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got, want := cfg.MaxRetainedVideos, 100; got != want {
+		t.Fatalf("maxRetainedVideos = %d, want %d", got, want)
+	}
+}
+
+func TestLoadConfigRejectsInvalidMaxRetainedVideosOverride(t *testing.T) {
+	t.Setenv("MAX_RETAINED_VIDEOS", "abc")
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"maxRetainedVideos":5}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := loadConfig(configPath)
+	if err == nil {
+		t.Fatalf("load config should reject invalid max retained videos override")
+	}
+	if !strings.Contains(err.Error(), "MAX_RETAINED_VIDEOS") {
+		t.Fatalf("error should mention env name: %v", err)
+	}
+}
+
 func TestProxyEnvKeepsExistingProxyVariablesWhenNoExplicitProxy(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:7890")
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")

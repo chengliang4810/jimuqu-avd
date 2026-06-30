@@ -325,6 +325,9 @@ func loadConfig(configPath string) (Config, error) {
 	if cfg.CategoryScanIntervalSeconds == 0 {
 		cfg.CategoryScanIntervalSeconds = 600
 	}
+	if err := applyMaxRetainedVideosOverride(&cfg); err != nil {
+		return Config{}, err
+	}
 	if cfg.MaxRetainedVideos < 0 {
 		cfg.MaxRetainedVideos = 0
 	}
@@ -356,6 +359,27 @@ func resolveProxyOverride(configProxy string) string {
 		}
 	}
 	return strings.TrimSpace(configProxy)
+}
+
+func applyMaxRetainedVideosOverride(cfg *Config) error {
+	for _, envName := range []string{"MAX_RETAINED_VIDEOS", "maxRetainedVideos"} {
+		value, ok := os.LookupEnv(envName)
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+
+		maxRetainedVideos, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", envName, err)
+		}
+		cfg.MaxRetainedVideos = maxRetainedVideos
+		return nil
+	}
+	return nil
 }
 
 func ensureRuntimePaths(cfg Config) error {
